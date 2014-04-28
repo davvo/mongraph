@@ -1,5 +1,7 @@
 var levelup = require('levelup'),
+    express = require('express'),
     parseDuration = require('parse-duration'),
+    gnuplot = require('gnuplot'),
     Args = require('args-js'),
     db = levelup('./db'),
     receiver = require('./lib/receiver')(db);
@@ -66,16 +68,45 @@ function getMetrics() {
     });
 }
 
-setTimeout(function () {
+var app = express();
+
+app.get('/keys.json', function (req, res) {
+    db.get('keys', function (err, value) {
+        if (err) {
+            return res.send(500, err);
+        }
+        res.set('Content-Type', 'application/json');
+        var keys = JSON.parse(value).sort();
+        res.send(keys);
+    });
+});
+
+app.get('/metrics.svg', function (req, res) {
+    var name = 'foo.bar.baz';
+    var start = new Date();
+    start.setHours(start.getHours() - 1);
     getMetrics({
-        name: 'foo.bar.baz',
+        name: name,
+        start: start.getTime(),
         done: function (err, metrics) {
             if (err) {
-                throw err;
+                return res.send(500, err);
             }
-            console.log(metrics.length);
+            var data = metrics.map(function (metric) {
+                return metric.time + ' ' + metric.value;
+            }).join('\n');
+            console.log(data);
+            res.set('Content-Type', 'image/svg+xml');
+            gnuplot()
+                .set('term svg')
+                .unset('xtics')
+                .plot('"-" using 1:2 title "' + name + '" with lines')
+                .println(data, {end: true})
+                .pipe(res);
         },
         agg: '1min',
         dense: true
     });
-}, 1000);
+});
+
+app.listen(8080);
