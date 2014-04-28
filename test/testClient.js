@@ -7,7 +7,7 @@ function getData() {
     return [key, value, time].join(' ') + '\n';
 }
 
-var client = net.connect({port: 8125}, function () {
+var client = net.connect({port: 2003}, function () {
     (function send() {
         var i, data = [];
         for (i = 0; i < Math.random() * 10; ++i) {
