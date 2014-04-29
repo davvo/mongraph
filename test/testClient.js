@@ -3,7 +3,7 @@ var net = require('net');
 function getData() {
     var key = 'foo.bar.baz',
         value = Math.floor(Math.random() * 100),
-        time = new Date().getTime();
+        time = Math.floor(new Date().getTime() / 1000);
     return [key, value, time].join(' ') + '\n';
 }
 

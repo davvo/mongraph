@@ -50,6 +50,7 @@ function getMetrics() {
     }).on('error', function (err) {
         args.done(err);
     }).on('data', function (data) {
+        console.log(data);
         var millis = parseInt(data.key.substring(data.key.lastIndexOf('.') + 1), 10),
             key = Math.floor(millis / duration) * duration;
         metrics[key] = parseFloat(data.value) + (metrics[key] || 0);
@@ -68,44 +69,75 @@ function getMetrics() {
     });
 }
 
-var app = express();
-
-app.get('/keys.json', function (req, res) {
-    db.get('keys', function (err, value) {
-        if (err) {
-            return res.send(500, err);
-        }
-        res.set('Content-Type', 'application/json');
-        var keys = JSON.parse(value).sort();
-        res.send(keys);
-    });
-});
-
-app.get('/metrics.svg', function (req, res) {
-    var name = 'foo.bar.baz';
+function plot(options, done) {
     var start = new Date();
-    start.setHours(start.getHours() - 1);
+    start.setHours(start.getHours() - options.duration);
+    console.log(start);
     getMetrics({
-        name: name,
+        name: options.name,
         start: start.getTime(),
         done: function (err, metrics) {
             if (err) {
-                return res.send(500, err);
+                return done(err);
             }
             var data = metrics.map(function (metric) {
                 return metric.time + ' ' + metric.value;
             }).join('\n');
-            console.log(data);
-            res.set('Content-Type', 'image/svg+xml');
-            gnuplot()
-                .set('term svg')
+            done(null, gnuplot()
+                .set('term ' + options.format + ' size 400, 300')
                 .unset('xtics')
-                .plot('"-" using 1:2 title "' + name + '" with lines')
+                .plot('"-" using 1:2 title "' + options.name + '" with lines')
                 .println(data, {end: true})
-                .pipe(res);
+            );
         },
-        agg: '1min',
+        agg: options.agg || '1min',
         dense: true
+    });        
+}
+
+function getContentType(options) {
+    switch (options.format) {
+        case 'svg':
+            return 'image/svg+xml';
+        default:
+            return 'image/png';
+    }
+}
+
+var app = express();
+app.use(express.static(__dirname + '/public'));
+
+app.get('/keys.json', function (req, res) {
+    db.get('keys', function (err, value) {
+        res.set('Content-Type', 'application/json');
+        if (err) {
+            console.warn(err.message);
+            res.send('[]');
+        } else {
+            var keys = JSON.parse(value).sort();
+            res.send(keys);
+        }
+    });
+});
+
+app.get('/:name.:format', function (req, res) {
+    var options = {
+        name: req.params.name,
+        format: req.params.format || 'png',
+        duration: req.query.duration || 72, // 3 days
+        agg: req.query.agg || '1min'
+    };
+    if (['png', 'svg'].indexOf(options.format) < 0) {
+        return res.send(400, 'Invalid format: ', options.format);
+    }
+    console.log(options);
+    plot(options, function (err, plotter) {
+        if (err) {
+            res.send(500, err);
+        } else {
+            res.set('Content-Type', getContentType(options));
+            plotter.pipe(res);
+        }
     });
 });
 
